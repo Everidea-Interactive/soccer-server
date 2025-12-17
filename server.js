@@ -8,55 +8,41 @@ const { Server } = require("socket.io");
 const PORT = process.env.PORT || 4000;
 
 const io = new Server(server, {
-    cors: {
-        origin: "*", 
-        methods: ["GET", "POST"],
-        credentials: true
-    },
-    // IZINKAN polling sebagai fallback jika websocket murni diblokir oleh jaringan/firewall
-    transports: ['websocket', 'polling'], 
-    allowEIO3: true, // Menambah kompatibilitas dengan library socket lama
-    pingTimeout: 60000, // Menjaga koneksi tetap hidup lebih lama
-    pingInterval: 25000
-});
-
-app.get('/', (req, res) => {
-    res.send('Soccer Server is Running');
-});
-
-server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+    cors: { origin: "*", methods: ["GET", "POST"] },
+    transports: ['websocket', 'polling'] // Menggunakan polling sebagai fallback jika websocket gagal
 });
 
 const sessions = {}; 
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    console.log('--- User Connected:', socket.id);
 
+    // 1. HOST REGISTER
     socket.on('register_host', (sessionId) => {
-        // Jika sesi sudah ada, update host-nya saja agar tidak memutus client yang mungkin sudah stand-by
-        if (!sessions[sessionId]) {
-            sessions[sessionId] = { host: socket.id, client: null };
-        } else {
-            sessions[sessionId].host = socket.id;
-        }
+        sessions[sessionId] = { host: socket.id, client: null };
         socket.join(sessionId);
-        console.log(`Host registered for session: ${sessionId}`);
+        console.log(`✅ Host Registered. Session: ${sessionId} | ID: ${socket.id}`);
     });
 
+    // 2. CLIENT JOIN
     socket.on('join_session', (sessionId) => {
+        console.log(`--- Client attempting to join: ${sessionId}`);
+        
         if (sessions[sessionId]) {
             sessions[sessionId].client = socket.id;
             socket.join(sessionId);
-            console.log(`Client joined session: ${sessionId}`);
+            console.log(`✅ Client Joined Session: ${sessionId} | ID: ${socket.id}`);
             
-            // Memberi tahu Host (Layar Utama) agar menjalankan StartGame()
+            // Beritahu Host bahwa Client sudah masuk untuk START GAME
             io.to(sessions[sessionId].host).emit('client_connected', "Ponsel Terhubung!");
+            console.log(`📢 Start signal sent to Host in session: ${sessionId}`);
         } else {
-            socket.emit('session_error', 'Sesi tidak ditemukan. Pastikan Layar Utama sudah terbuka.');
+            console.log(`❌ Session ${sessionId} not found for client ${socket.id}`);
+            socket.emit('session_error', 'Session not found.');
         }
     });
 
+    // 3. KICK DATA RELAY
     socket.on('send_kick', (data) => {
         const sessionId = Object.keys(sessions).find(id => sessions[id].client === socket.id);
         if (sessionId && sessions[sessionId].host) {
@@ -64,6 +50,7 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 4. SCORE & RESULT RELAY
     socket.on('score_update', (score) => {
         const sessionId = Object.keys(sessions).find(id => sessions[id].host === socket.id);
         if (sessionId && sessions[sessionId].client) {
@@ -75,13 +62,6 @@ io.on('connection', (socket) => {
         const sessionId = Object.keys(sessions).find(id => sessions[id].host === socket.id);
         if (sessionId && sessions[sessionId].client) {
             io.to(sessions[sessionId].client).emit('shot_result', result); 
-        }
-    });
-
-    socket.on('game_over', (finalScore) => {
-        const sessionId = Object.keys(sessions).find(id => sessions[id].host === socket.id);
-        if (sessionId && sessions[sessionId].client) {
-            io.to(sessions[sessionId].client).emit('game_over', finalScore); 
         }
     });
 
@@ -101,3 +81,5 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
