@@ -40,9 +40,37 @@ io.on('connection', (socket) => {
         } catch (e) { console.error(e); }
     });
 
-    // Relay Skor
-    socket.on('score_update', (s) => io.emit('score_update', s));
-    socket.on('shot_result', (r) => io.emit('shot_result', r));
+    // Relay Skor: Dari Host ke Client di sesi yang sama
+    socket.on('score_update', (score) => {
+        // Cari sid (Session ID) di mana socket ini adalah Host-nya
+        const sid = Object.keys(sessions).find(k => sessions[k].host === socket.id);
+        if (sid && sessions[sid].client) {
+            // Kirim HANYA ke client di sesi tersebut
+            io.to(sessions[sid].client).emit('score_update', score);
+            console.log(`Relay Score to ${sid}: ${score}`);
+        }
+    });
+
+    // Relay Hasil Tendangan (Goal/Save): Dari Host ke Client
+    socket.on('shot_result', (result) => {
+        const sid = Object.keys(sessions).find(k => sessions[k].host === socket.id);
+        if (sid && sessions[sid].client) {
+            io.to(sessions[sid].client).emit('shot_result', result);
+            console.log(`Relay Result to ${sid}: ${result}`);
+        }
+    });
+
+    // Relay Game Over
+    socket.on('game_over', (finalScore) => {
+        // Cari SID berdasarkan ID socket Host yang mengirim game_over
+        const sid = Object.keys(sessions).find(k => sessions[k].host === socket.id);
+        
+        if (sid && sessions[sid].client) {
+            // Kirim hanya ke client di sesi tersebut
+            io.to(sessions[sid].client).emit('game_over', finalScore);
+            console.log(`Relay Game Over to Client in session ${sid}. Final Score: ${finalScore}`);
+        }
+    });
 
     socket.on('disconnect', () => {
         for (const sid in sessions) {
